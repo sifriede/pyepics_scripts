@@ -67,7 +67,7 @@ for pv in pv_all:
 df = pd.DataFrame(columns = column_names)
 
 # Miscellanous varibales
-now = datetime.datetime.now().strftime("%y%m%d_%h%m_")
+now = datetime.datetime.now().strftime("%y%m%d_%H%M_")
 try:
     in_len = len(str(no_mean))
 except:
