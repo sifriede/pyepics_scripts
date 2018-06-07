@@ -2,22 +2,47 @@
 import datetime
 import numpy as np
 import epics
+import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import pandas as pd
+import os
 import re
 import seaborn as sns
 import sys
 
-from time import sleep
+from time import time, sleep
 from scipy.optimize import curve_fit
 from scipy.odr import RealData, Model, ODR, Output, odr
 
+# Change only here
+# Laser
+amp_low, amp_high, amp_step = 5000, 11800, 200
+amp_range = range(amp_low, amp_high+amp_step, amp_step)
+
+# No CHANGES below here
+
 # Confirmation dialog
-response = input("This script ramps the laser and measures the current on the anode head. Do you want to continue? [Yy]")
+print("This script ramps the laser from {} to {} with stepwidth {}.".format(amp_low, amp_high, amp_step))
+print("It measures the current on the anode head and fits I(P_refl).")
+response = input("Do you want to continue? [Yy]")
 if not any(response == yes for yes in ['Y','y']):
     print("Aborting.")
     sys.exit(0)
 
+# Time of Measurement
+start_now = datetime.datetime.now()
+path_prefix, file_prefix = [start_now.strftime(pat) for pat in ["%y%m%d", "%y%m%d_%H%M_"]]
+
+# Path
+path = "{}/".format(path_prefix)
+if not os.path.isdir(path):
+    print("Picture directory does not exist yet, making dir {}".format(path))
+    try:
+        os.system("mkdir {}".format(path))
+    except:
+        print("Could not make picture directory, aborting")
+        sys.exit(0)
 
 # PVs
 pv_curr = [epics.PV('steam:anode:i_get')]
@@ -27,11 +52,11 @@ pv_power = [epics.PV(itm) for itm in ['steam:powme1:pow_get', 'steam:laser:pow_a
 pv_all = pv_curr + pv_qe + pv_power
 pv_laser = {'amp': epics.PV('steam:laser:amp_set') , 'dc': epics.PV('steam:laser:dc_set')}
 
-# Laser
-amp_range = range(7000,8100,100)
+pv_anode_volt = epics.caget('steam_prep:abacus:u_set')
+pv_cathode_volt = epics.caget('steam:hv:u_get')
 
 # Defaults
-no_mean = 20
+no_mean = 50
 delay = 0.2
 argv_range = len(sys.argv)
 if 1 < len(sys.argv):
@@ -54,8 +79,7 @@ if 1 < len(sys.argv):
 
 # DataFrame
 regex = re.compile(r'(?<=:)\w+:\w+(?=_)')
-column_names = []
-# df = pd.DataFrame(columns = ['Amp', 'Prefl', 'Prefl_std', 'P_att', 'P_att_std', 'I_anode', 'I_anode_std'])
+column_names = ['amp']
 for pv in pv_all:
     match = re.findall(regex, pv.pvname)[0]
     if match == []:
@@ -67,7 +91,6 @@ for pv in pv_all:
 df = pd.DataFrame(columns = column_names)
 
 # Miscellanous varibales
-now = datetime.datetime.now().strftime("%y%m%d_%H%M_")
 try:
     in_len = len(str(no_mean))
 except:
@@ -82,12 +105,24 @@ print("Delay time: {}s".format(delay))
 print("")
 
 for amp in amp_range: 
+    # Timer
+    if amp == amp_low:
+        start = time()
+    else:
+        stop = time()
+        remaining_steps = (amp_high-amp) / amp_step
+        ert = (stop-start)*remaining_steps
+        print("Estimated remaining time: {:.2f}s".format(ert))
+        start = time()
+
     # Laser
     pv_laser['amp'].put(amp)
     sleep(0.5) 
     pv_laser['dc'].put(1)
     sleep(0.5) 
-    
+    epics.caput("steam:laser_shutter:ls_set", 1)
+    sleep(0.5) 
+ 
     # Measure
     print("Measured for laser amp {}: ".format(amp))
     for i in range(1, no_mean+1):
@@ -97,36 +132,42 @@ for amp in amp_range:
         sleep(delay)
         res.append([pv.get() for pv in pv_all])
     print("\nFinished")
+
     # Mean and std
-    data = []
+    data = [amp]
     mean,std  = np.mean(res, axis=0), np.std(res, axis=0)
     for i in range(len(mean)):
         data.append(mean[i])
         data.append(std[i])
     res = []
+
     # Save to DataFrame
     df.loc[df_idx] = data
     df_idx += 1
 
 # Close laser shutter
-print("\n Closing laser shutter!")
+print("\n Closing laser shutter and setting laser amplitude to 0!")
 epics.caput("steam:laser_shutter:ls_set", 0)
+pv_laser['amp'].put(0)
+sleep(0.5) 
+pv_laser['dc'].put(0)
 
 # Results
 print("===== Results =====")
 print(df)
-outfile = "{}qe_lsrramp".format(now)
+outfile = "{}{}qe_lsrramp".format(path, file_prefix)
 df.to_csv(outfile + ".dat", sep="\t")
 
 try:
     # x-y-Data
-    plot_list = ['powme1:pow[W]', 'powme1:pow_err[W]', 'anode:i[A]', 'anode:i_err[A]']
-    x, xerr, y, yerr = [df[idx] for idx in plot_list]
+    plot_list = ['powme1:pow[W]', 'powme1:pow_err[W]', 'anode:i[A]', 'anode:i_err[A]', 'qe_an:qe[%]', 'qe_an:qe_err[%]']
+    x, xerr, y, yerr, qe, qeerr = [df[idx] for idx in plot_list]
 
 
     def lm(B, x):
         return B[0]*x+B[1]
     
+
     # Fit
     data = RealData(x, y, sx=xerr, sy=yerr)
     linear = Model(lm)
@@ -140,14 +181,44 @@ except:
 
 finally:
     # Plots
+    ## Figure and axes
     fig, ax = plt.subplots(figsize = (16,12))
-    ax.errorbar(x, y, xerr, yerr, label='Data', linestyle="None", mfc='gray', mec='black', ecolor='gray')
-    ax.plot(x, yfit, label='ODR fit: {:.2f}*x{:+.2f}, chisq = {}'.format(*fit_output.beta, chisquared))
-    ax.legend(loc='upper left')
-    ax.set_title('Electron current on anode head vs reflected laser power')
+    ax2 = ax.twinx()
+    
+    font = {'family' : 'sans-serif',
+        'size'   : 12}
+    matplotlib.rc('font', **font)
+    
+    ## Colors
+    color = {'curr':'gray', 'qe': 'blue', 'curr_fit': 'orange'}
+    
+    ## Anode current
+    ln1 = ax.errorbar(x, y, xerr = xerr, yerr = yerr, label='Anode current', marker='o', linestyle="None", mfc=color['curr'], mec='black', ecolor=color['curr'])
     ax.set_xlabel(x.name)
-    ax.set_ylabel(y.name)
-    fig.text(0, 0, "Date: {}".format(datetime.datetime.now().strftime("%d.%m.%y %H:%M")))
+    ax.set_ylabel(y.name, color=color['curr'])
+    # ax.set_xscale("log", nonposx='clip')                                        
+    # ax.set_yscale("log", nonposy='clip')
+         
+    ## QE                                                                                                                                 
+    ln2 = ax2.errorbar(x, qe, xerr = xerr, yerr = qeerr, label='QE', marker='v', linestyle="None", mfc=color['qe'], mec='black', ecolor=color['qe'])
+    ax2.set_ylabel(qe.name, color=color['qe'])       
+    ax2.tick_params(axis='y', labelcolor=color['qe'])
+          
+    ## Fit                                                                                              
+    ln3 = ax.plot(x, yfit, label='ODR fit anode current: {:.2g}*x+{:.2g}, chisq = {:.2g}'.format(*fit_output.beta, chisquared), color=color['curr_fit'])  
+    
+    ## Legend
+    lns = [ln1,ln2,ln3[0]]
+    labs = [l.get_label() for l in lns]
+    ax.legend(lns, labs, loc='upper left', fontsize=font['size'])
+                    
+    ## Miscellanous            
+    ax.set_title('Electron current on anode head vs reflected laser power')
+    ax.grid(color=color['curr'], which='both', axis='y')                                
+    plt.ticklabel_format(style='sci', axis='x', scilimits=(0,0)) 
+    fig.text(0, 0, "Date: {}, no_mean = {}, delay = {}s, U_anode = {}V, U_cathode = {}kV".format(
+             datetime.datetime.now().strftime("%d.%m.%y %H:%M"), no_mean, delay, pv_anode_volt, pv_cathode_volt)
+            )
     fig.savefig(outfile + ".png")
     plt.show()
 
