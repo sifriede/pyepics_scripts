@@ -64,7 +64,7 @@ print("\nFinished")
 
 # Mean and std
 mean = np.mean(res, axis=0)
-std = np.std(res, axis=0)
+std = np.std(res, axis=0)/np.sqrt(no_mean)
 print("===== Results =====")
 for pv, m, s in zip(pv_all, mean, std):
     print("{} = ({:=+05.3g} +/- {:=+05.3g}){} ({:.3f}%)".format(pv.pvname, m, s, pv.units, abs(s/m)*100))
