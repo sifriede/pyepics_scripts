@@ -145,7 +145,7 @@ for amp in amp_range:
     df_idx += 1
 
     # Space charge 
-    if df['anode:i[A]'].values[-1] >= 1.5e-9:
+    if df['anode:i[A]'].values[-1] >= 1.0e-9:
         print("Warning: Anode current too big for higher laser power!")
         print("         Stopping measurement loop.")
         break
@@ -156,7 +156,7 @@ epics.caput("steam:laser_shutter:ls_set", 0)
 pv_laser['amp'].put(0)
 sleep(0.5) 
 pv_laser['dc'].put(0)
-
+sleep(2)
 ## Measure and mean steam:hv:u_get
 pv_cathode_volt_std = np.std(df['hv:u[kV]'])/np.sqrt(len(df['hv:u[kV]']))
 pv_cathode_volt = np.mean(df['hv:u[kV]'])
@@ -202,7 +202,7 @@ finally:
     matplotlib.rc('font', **font)
     
     ## Colors
-    color = {'curr':'gray', 'qe': 'blue', 'curr_fit': 'orange'}
+    color = {'curr':'gray', 'qe': 'blue', 'curr_fit': 'orange', 'residuals' : 'cyan'}
     
     ## Anode current
     ln1 = ax.errorbar(x, y, xerr = xerr, yerr = yerr, label='Anode current', marker='o', linestyle="None", mfc=color['curr'], mec='black', ecolor=color['curr'])
@@ -219,8 +219,11 @@ finally:
     ## Fit                                                                                              
     ln3 = ax.plot(x, yfit, label='ODR fit anode current: {:.3g} * x {:+.3g}, chisq = {:.2g}'.format(*fit_output.beta, chisquared), color=color['curr_fit'])  
     
+    ## Residuals                                                                                              
+    ln4 = ax.plot(x, yfit-y, label='Residuals: (yfit-y)', color=color['residuals'], marker='^', mfc=color['residuals'], mec='black')  
+    
     ## Legend
-    lns = [ln1,ln2,ln3[0]]
+    lns = [ln1,ln2,ln3[0],ln4[0]]
     labs = [l.get_label() for l in lns]
     ax.legend(lns, labs, loc='upper left', fontsize=font['size'])
                     
