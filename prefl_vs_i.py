@@ -145,7 +145,7 @@ for amp in amp_range:
     df_idx += 1
 
     # Space charge 
-    if df['anode:i[A]'].values[-1] >= 1.0e-9:
+    if df['anode:i[A]'].values[-1] > 1.0e-9:
         print("Warning: Anode current too big for higher laser power!")
         print("         Stopping measurement loop.")
         break
