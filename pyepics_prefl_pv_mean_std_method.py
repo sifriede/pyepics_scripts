@@ -82,14 +82,18 @@ def prefl_meas_hist(laser_amp, no_mean = 10000, delay = 0.2, powme_aver = 100):
     
     # Mean and std
     mean = np.mean(res, axis=0)
-    std = np.std(res, axis=0)/np.sqrt(no_mean)
+    std = np.std(res, axis=0)
+    mean_err = std/np.sqrt(no_mean)
+    
+    mean_sigma_string = "mean +/- mean_err = ({:=+05.3g} +/- {:=+05.3g}) {} ({:.3f}%); \u03c3 = {:3.3g}{}".format(mean, mean_err, pv_pow.units, (mean_err/mean)*100, std, pv_pow.units)
+    
     print("===== Results =====")
-    print("{} = ({:=+05.3g} +/- {:=+05.3g}){} ({:.3f}%)".format(pv_pow.pvname, mean, std, pv_pow.units, abs(std/mean)*100))
+    print(mean_sigma_string)
     print("Done!")
     
     # Result
     result = {
         'laser_amp' : laser_amp, 'powme_aver' : powme_aver, 'no_mean' : no_mean, 'delay' : delay,
-        'data' : np.array(res), 'data_mean' : mean, 'data_std': std, 'timestamp' : timestamp}
+        'data' : np.array(res), 'data_mean' : mean, 'data_mean_err': mean_err, 'data_std': std, 'timestamp' : timestamp}
     
     return result
