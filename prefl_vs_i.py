@@ -30,6 +30,24 @@ if not any(response == yes for yes in ['Y','y']):
     print("Aborting.")
     sys.exit(0)
 
+# Check conditions
+epics.caput("steam:laser_shutter:ls_set", 0)
+def check_conditions():
+    hv = epics.caget("steam:hv:u_set")
+    anode_v = epics.caget("steam_prep:abacus:u_set")
+    if not hv == 0.1:
+        print("Wrong HV voltage != 0.1kV")
+    elif not anode_v == 100:
+        print("Wrong Anode voltage != 100V")
+    else:
+        return False
+    #Abort if conditions are not fullfilled
+    print("Aborting")
+    sys.exit(0)
+
+
+check_conditions()
+
 # Time of Measurement
 start_now = datetime.datetime.now()
 path_prefix, file_prefix = [start_now.strftime(pat) for pat in ["%y%m%d", "%y%m%d_%H%M_"]]
@@ -142,13 +160,15 @@ for amp in amp_range:
 
     # Save to DataFrame
     df.loc[df_idx] = data
-    df_idx += 1
 
     # Space charge 
     if df['anode:i[A]'].values[-1] > 1.0e-9:
-        print("Warning: Anode current too big for higher laser power!")
+        print("Warning: Anode current {:3.5g} too big for higher laser power!".format(df['anode:i[A]'].values[-1]))
         print("         Stopping measurement loop.")
+        df = df.drop(df.index[df_idx])
         break
+    
+    df_idx += 1
 
 # Close laser shutter
 print("\n Closing laser shutter and setting laser amplitude to 0!")
@@ -167,7 +187,7 @@ print("\nsteam:hv:u_get = {}".format(pv_cathode_volt_str))
 print("===== Results =====")
 print(df)
 outfile = "{}{}qe_lsrramp".format(path, file_prefix)
-df.to_csv(outfile + ".dat", sep="\t")
+df.to_csv(outfile + ".dat", sep="\t", float_format="%.3e")
 
 try:
     # x-y-Data
@@ -176,7 +196,8 @@ try:
 
 
     def lm(B, x):
-        return B[0]*x+B[1]
+        #return B[0]*x+B[1]
+        return B[0]*x
     
 
     # Fit
@@ -204,20 +225,28 @@ finally:
     ## Colors
     color = {'curr':'gray', 'qe': 'blue', 'curr_fit': 'orange', 'residuals' : 'cyan'}
     
+    ## x Axis
+    ax.set_xlabel("$P_{refl}$")                        
+    formatterx = EngFormatter(unit='W')     
+    ax.xaxis.set_major_formatter(formatterx)
+    
     ## Anode current
     ln1 = ax.errorbar(x, y, xerr = xerr, yerr = yerr, label='Anode current', marker='o', linestyle="None", mfc=color['curr'], mec='black', ecolor=color['curr'])
-    ax.set_xlabel(x.name)
-    ax.set_ylabel(y.name, color=color['curr'])
-    # ax.set_xscale("log", nonposx='clip')
-    # ax.set_yscale("log", nonposy='clip')
+    ax.set_ylabel("Anode current", color=color['curr'])
+    formattery = EngFormatter(unit='A') 
+    ax.yaxis.set_major_formatter(formattery)
+    ax.tick_params(axis='y', labelcolor=color['curr'])
+    
          
     ## QE
     ln2 = ax2.errorbar(x, qe, xerr = xerr, yerr = qeerr, label='QE', marker='v', linestyle="None", mfc=color['qe'], mec='black', ecolor=color['qe'])
-    ax2.set_ylabel(qe.name, color=color['qe'])
+    ax2.set_ylabel('QE', color=color['qe'])
     ax2.tick_params(axis='y', labelcolor=color['qe'])
+    formattery2 = EngFormatter(unit='%')     
+    ax2.yaxis.set_major_formatter(formattery2)
           
     ## Fit                                                                                              
-    ln3 = ax.plot(x, yfit, label='ODR fit anode current: {:.3g} * x {:+.3g}, chisq = {:.2g}'.format(*fit_output.beta, chisquared), color=color['curr_fit'])  
+    ln3 = ax.plot(x, yfit, label="ODR fit anode current\n"+r'${:.3e}\frac{{A}}{{W}}\cdot P_{{refl}}$, $\chi^2 = {:.2e}$'.format(fit_output.beta[0], chisquared), color=color['curr_fit'])  
     
     ## Residuals                                                                                              
     ln4 = ax.plot(x, yfit-y, label='Residuals: (yfit-y)', color=color['residuals'], marker='^', mfc=color['residuals'], mec='black')  
@@ -225,12 +254,12 @@ finally:
     ## Legend
     lns = [ln1,ln2,ln3[0],ln4[0]]
     labs = [l.get_label() for l in lns]
-    ax.legend(lns, labs, loc='upper left', fontsize=font['size'])
+    leg = ax.legend(lns, labs, loc='center right', fontsize=font['size'], framealpha=1)
                     
     ## Miscellanous            
     ax.set_title('Electron current on anode head vs reflected laser power')
     ax.grid(color=color['curr'], which='both', axis='y')                                
-    plt.ticklabel_format(style='sci', axis='x', scilimits=(0,0)) 
+    # plt.ticklabel_format(style='sci', axis='x', scilimits=(0,0)) 
     fig.text(0.01, 0.01, "Date: {}, num_mean = {}, delay = {}s, U_anode = {}V, U_cathode = {}".format(
              datetime.datetime.now().strftime("%d.%m.%y %H:%M"), num_mean, delay, pv_anode_volt, pv_cathode_volt_str)
             )
