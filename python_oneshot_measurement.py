@@ -69,7 +69,7 @@ for qd_param in pv_qd_param:
     pv_all[qd_param] = epics.PV('melba_020:trip_q{}:{}'.format(quad_no, qd_param))
 
 #Miscellanous
-wait_for_camera = 15  # Time in seconds to wait between switching to the next current step
+wait_for_camera = 20  # Time in seconds to wait between switching to the next current step
 trig_delay = round(epics.caget('steam:laser:trig_delay_get')*1e-6)  # Trigger delay converted from us to s
 
 # Confirmation dialog
@@ -91,6 +91,9 @@ if not any(response == yes for yes in ['G','g']):
     print("Aborting.")
     sys.exit(0)
 
+#Safety checks
+epics.caput('steam:laser:dc_set', 0)
+check_laser()
 
 # Measurement loop
 try:
@@ -105,7 +108,7 @@ try:
         pv_all['i_set'].put(i_set)
         
         info = True
-        while not (abs(i_set)*0.8 <= abs(pv_all['i_get'].get()) <= abs(i_set) + 1e-3):
+        while not (abs(i_set)*0.9 <= abs(pv_all['i_get'].get()) <= abs(i_set) + 1e-3):
             if info:
                 print("Waiting for i_get to be updated...")
                 info = False
@@ -125,8 +128,6 @@ try:
         while wait < float(wait_for_camera):
             check_laser()
             wait += 0.1
-            if wait % 1 == 0.0: 
-                print("{:02d}".format(wait), end=" ", flush=True)
             time.sleep(.1)    
         print("\n")
         stop = time.time()
