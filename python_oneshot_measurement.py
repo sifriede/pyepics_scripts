@@ -26,6 +26,20 @@ def check_laser():
         abort_script()
 
 
+def set_quadrupol(i_set, i_set_pv, i_get_pv, shot_mode=False):
+    """Sets quadrupol to i_set and waits until i_get is updated accordingly"""
+    print("Quadrupol i_set: {:+05d}mA".format(int(i_set*1000)))
+    i_set_pv.put(i_set)
+    info = True
+    while not (i_set*0.9 <= i_get_pv.get() <= i_set + 1e-3) and not (i_set*0.9 >= i_get_pv.get() >= i_set):
+        if info:
+           print("Waiting for i_get to be updated...")
+           info = False
+        time.sleep(0.1) 
+        if shot_mode: check_laser()
+    return i_get_pv.get()
+
+
 # Try communication with laser shutter
 try:
     epics.caget('steam:laser_shutter:ls_set')
@@ -104,17 +118,9 @@ try:
             start = time.time()
     
         ## Quadrupol
-        print("pic {}/{}: Quadrupol i_set: {:+05d}mA".format(pic, nelm, int(i_set*1000)))
-        pv_all['i_set'].put(i_set)
-        
-        info = True
-        while not (abs(i_set)*0.9 <= abs(pv_all['i_get'].get()) <= abs(i_set) + 1e-3):
-            if info:
-                print("Waiting for i_get to be updated...")
-                info = False
-            time.sleep(0.1) 
-            check_laser()
-    
+        i_get = set_quadrupol(i_set, pv_qd_set, pv_qd_get, True)
+        print('Quadrupol bereit. Oeffne Shutter.')        
+
         time.sleep(1)
         print("Quadrupol i_get: {:+05d}mA".format(int(pv_all['i_get'].get()*1000)))
         epics.caput('steam:laser_shutter:ls_set', 1)
@@ -123,13 +129,12 @@ try:
         time.sleep(trig_delay + 1) # Wait at least 
         print("Pew!")
         epics.caput('steam:laser_shutter:ls_set', 0)
-        print("Waiting for camera {}s: ".format(wait_for_camera), end="", flush=True)
+        print("Waiting for camera {}s...".format(wait_for_camera))
         wait = 0.0
         while wait < float(wait_for_camera):
             check_laser()
             wait += 0.1
             time.sleep(.1)    
-        print("\n")
         stop = time.time()
         no_steps = (i_final+di-i_set)/di
         print("Estimated remaining time: {:.3f}s".format(no_steps*(stop-start)))
