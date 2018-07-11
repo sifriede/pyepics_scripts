@@ -36,7 +36,8 @@ pv_quad_trip_s = ['melba_{:03d}:trip_s{}{}:{}'.format(sub, s, n, get)
 pv_alpha = ['melba_030:a:i_get', 'melba_030:a:on_get']
 
 ## Laser
-pv_laser = ['steam:laser:setamp_get', 'steam:powme1:pow_get', 'steam:powme1:wavelength_get']
+pv_laser = ['steam:laser:setamp_get', 'steam:powme1:pow_get', 
+    'steam:powme1:wavelength_get', 'steam:laser:pl_get', 'steam:laser:dt_get', 'steam:laser:nos_get', 'steam:prefl_vs_i:i_get.INPA']
 
 ## All
 pv_all = pv_steerer + pv_solenoids + pv_quad_trip_q + pv_quad_trip_s + pv_alpha + pv_laser
@@ -45,6 +46,7 @@ pv_all = pv_steerer + pv_solenoids + pv_quad_trip_q + pv_quad_trip_s + pv_alpha 
 # Miscellanous
 delay = 0.1
 df = pd.DataFrame(index=pv_all + ['timestamp'], columns=['values', 'units'])
+df.index.name = 'PV'
 
 # Main
 for pv in pv_all:

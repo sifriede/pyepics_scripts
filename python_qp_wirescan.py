@@ -4,8 +4,10 @@ import math
 import time
 import numpy as np
 import pandas as pd
+import subprocess
 import sys
 import os
+
 
 
 if len(sys.argv) != 5:
@@ -125,8 +127,7 @@ if not all(aver_sets[0] == aver_sets[i] for i in range(len(aver_sets))):
         print("Aborting.")
         abort_script()
 
-
-
+# Preparation dialog
 print("==============================================")
 print("Prepare:")
 print("1. HV Voltage and laser amplitude")
@@ -138,6 +139,7 @@ if not any(response == yes for yes in ['G','g']):
     print("Aborting.")
     sys.exit(0)
 
+subprocess.call(['python3', '/home/melba/messung/All_quadscan/python_pv_getall.py'])
         
 # Path
 now = datetime.datetime.now()
@@ -167,6 +169,7 @@ for pv in pv_list:
     temp = "{} = {} {}".format(pv.pvname, value, pv.units)
     pv_info.append(temp)
 pv_info.append("Measured on {}".format(now.strftime("%d.%m.%Y %H:%M")))
+pv_info.append("Quadrupol {}".format(pv_qd_set.pvname))
 
 outfile = "{}{}wirescan_info.dat".format(path, file_prefix)
 print("Saving results to {}".format(outfile))
@@ -233,7 +236,6 @@ except KeyboardInterrupt:
 
 print("Messung abgeschlossen.")
 # Save
-outfile = "{}{}wirescan.csv".format(path, file_prefix)
 print("Saving results to {}".format(outfile))
 with open(outfile, 'a') as f:
     df.to_csv(f)

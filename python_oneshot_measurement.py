@@ -1,7 +1,8 @@
-import sys
 import numpy as np
 import time
 import epics
+import subprocess
+import sys
 
 if len(sys.argv) != 5:
     print("Usage: python3 {} <quad_no=1> <i_init=-0.05> <i_final=0.15> <di=0.05>, shutter can be closed, picamera should be ready for trigger".format(sys.argv[0])) 
@@ -104,6 +105,10 @@ response = input("Ready? [Gg]")
 if not any(response == yes for yes in ['G','g']):
     print("Aborting.")
     sys.exit(0)
+
+# pv_getall
+subprocess.call(['python3', '/home/melba/messung/All_quadscan/python_pv_getall.py'])
+
 
 #Safety checks
 epics.caput('steam:laser:dc_set', 0)
