@@ -27,6 +27,13 @@ def abort_script(DISP = False):
             pv_scan_trig_input.put(0)  # Cyclic Trigger off
         except:
             epics.caput('steam:laser:on_set', 0)
+    try:
+        if os.path.exists(outfile): 
+            print("Deleting {}".format(outfile))
+            os.system("rm {}".format(outfile))
+    except:
+        pass
+            
     sys.exit()
 
 
@@ -53,7 +60,10 @@ def set_quadrupol(i_set, i_set_pv, i_get_pv, shot_mode=False):
     print("Quadrupol i_set: {:+05d}mA".format(int(i_set*1000)))
     i_set_pv.put(i_set)
     info = True
-    while not (i_set*0.9 <= i_get_pv.get() <= i_set + 1e-3) and not (i_set*0.9 >= i_get_pv.get() >= i_set):
+    """condition1 for i_set >= 0; condition2 for i_set < 0"""
+    while not (i_set*0.95 <= i_get_pv.get() <= i_set * 1.05 + 1e-3) and 
+          not (i_set*0.95 >= i_get_pv.get() >= i_set * 1.05):    
+    #while not (i_set - 2e-3 <= i_get_pv.get() <= i_set + 2e-3):
         if info:
            print("Waiting for i_get to be updated...")
            info = False
@@ -62,7 +72,7 @@ def set_quadrupol(i_set, i_set_pv, i_get_pv, shot_mode=False):
     return i_get_pv.get()
 
 # Scanner
-scanner = "melba_020:scan"
+scanner = "melba_050:scan"
 
 # Quadrupol specifications
 #Arguments
@@ -74,9 +84,9 @@ try:
 except:
     print("Could not convert input. Taking defaults.")
     quad_no = 1 
-    i_init = -0.22
-    i_final =  0.44
-    di = 0.011
+    i_init = -0.1
+    i_final =  0.22
+    di = 0.01
 
 if i_init > i_final:
     di = -di
@@ -94,11 +104,11 @@ pv_scan_trig_input = epics.PV(scanner+ ':trig_input_FU00_set')
 pv_datach0_nos = epics.PV(scanner+ ':datach0_noofsamples_get')
 
 # Quadrupol PV
-pv_qd_set = epics.PV('melba_020:trip_q{}:i_set'.format(quad_no))
-pv_qd_get = epics.PV('melba_020:trip_q{}:i_get'.format(quad_no))
+pv_qd_set = epics.PV('melba_050:trip_q{}:i_set'.format(quad_no))
+pv_qd_get = epics.PV('melba_050:trip_q{}:i_get'.format(quad_no))
 
 # Confirmation dialog
-print("This script scans through quadrupol melba_020:trip_q{}.".format(quad_no))
+print("This script scans through quadrupol melba_050:trip_q{}.".format(quad_no))
 print("It ramps current from {} to {} with stepwidth {} <=> {} wirescans.".format(i_init, i_final, di, nelm))
 print("For each current: drive scanner to start pos, open shutter, start measurement, drive to end pos, stop measurement close shutter.")
 confirmation = input("Do you want to continue? [Yy]")
