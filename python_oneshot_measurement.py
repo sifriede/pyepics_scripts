@@ -4,42 +4,12 @@ import epics
 import subprocess
 import sys
 
+from python_quadscan_methods import *
+
+
 if len(sys.argv) != 5:
     print("Usage: python3 {} <quad_no=1> <i_init=-0.05> <i_final=0.15> <di=0.05>, shutter can be closed, picamera should be ready for trigger".format(sys.argv[0])) 
     sys.exit()
-
-# Methods
-def abort_script(DISP = False):
-    """Script to close shutter or turn of laser an abort script"""
-    if not DISP:
-        try:
-            epics.caput('steam:laser_shutter:ls_set', 0)
-            epics.caput('steam:laser:dc_set', 0)
-        except:
-            epics.caput('steam:laser:on_set', 0)
-    sys.exit()
-
-
-def check_laser():
-    """Safety function to check if laser power is too high while waiting"""
-    if pv_laser['pow_get'].get() >= 5e-6:
-        print("Laser power too high! Aborting!")
-        abort_script()
-
-
-def set_quadrupol(i_set, i_set_pv, i_get_pv, shot_mode=False):
-    """Sets quadrupol to i_set and waits until i_get is updated accordingly"""
-    print("Quadrupol i_set: {:+05d}mA".format(int(i_set*1000)))
-    i_set_pv.put(i_set)
-    info = True
-    while not (i_set*0.9 <= i_get_pv.get() <= i_set + 1e-3) and not (i_set*0.9 >= i_get_pv.get() >= i_set):
-        if info:
-           print("Waiting for i_get to be updated...")
-           info = False
-        time.sleep(0.1) 
-        if shot_mode: check_laser()
-    return i_get_pv.get()
-
 
 # Try communication with laser shutter
 try:

@@ -18,6 +18,7 @@ if len(sys.argv) != 5:
 
 # Scanner
 scanner = "melba_020:scan"
+triplet = "melba_020:trip"
 
 # Quadrupol specifications
 #Arguments
@@ -38,23 +39,26 @@ if i_init > i_final:
 nelm = int((i_final + di - i_init)/di)
 
 #Scanner start- and endposition
-s_start = 30
-s_end = 120
+s_start = 95
+s_end = 115
+ds = 5
 
 # Scanner PV
 pv_scan_stoppos = epics.PV(scanner+ ':stoppos_set')
 pv_scan_start = epics.PV(scanner+ ':start')
 pv_scan_run_get = epics.PV(scanner+ ':run_get')
-pv_scan_trig_input = epics.PV(scanner+ ':trig_input_FU00_set')
+# pv_scan_trig_input = epics.PV(scanner+ ':trig_input_FU00_set')
 pv_datach0_nos = epics.PV(scanner+ ':datach0_noofsamples_get')
 
 # Quadrupol PV
-triplet = scanner[:9] 
-pv_qd_set = epics.PV(triplet + ':trip_q{}:i_set'.format(quad_no))
-pv_qd_get = epics.PV(triplet + ':trip_q{}:i_get'.format(quad_no))
+pv_qd_set = epics.PV(triplet +'_q{}:i_set'.format(quad_no))
+pv_qd_get = epics.PV(triplet +'_q{}:i_get'.format(quad_no))
+
+# Laser PV
+pv_sh = epics.PV('steam:laser:sh_set')
 
 # Confirmation dialog
-print("This script scans through quadrupol {}:trip_q{}.".format(triplet, quad_no))
+print("This script scans through quadrupol {}_q{}.".format(triplet, quad_no))
 print("It ramps current from {} to {} with stepwidth {} <=> {} wirescans.".format(i_init, i_final, di, nelm))
 print("For each current: drive scanner to start pos, open shutter, start measurement, drive to end pos, stop measurement close shutter.")
 confirmation = input("Do you want to continue? [Yy]")
@@ -89,7 +93,7 @@ print("Prepare:")
 print("1. HV Voltage and laser amplitude")
 print("2. Close laser shutter, it will be opened and closed by script")
 print("3. Deactivate all following magnetic devices after the selected quadrupol.")
-print("4. Set DC on")
+print("4. UNSET DC MODE; shot will be used by script!")
 response = input("Ready? [Gg]")
 if not any(response == yes for yes in ['G','g']):
     print("Aborting.")
@@ -100,7 +104,7 @@ subprocess.call(['python3', '/home/melba/messung/All_quadscan/python_pv_getall.p
 # Path
 now = datetime.datetime.now()
 path_prefix, file_prefix = [now.strftime(fmt) for fmt in ["%y%m%d", "%y%m%d_%H%M_"]]
-path = "/home/melba/messung/All_quadscan/wirescan/{}/".format(path_prefix)
+path = "/home/melba/messung/All_quadscan/wirescan_triggered/{}/".format(path_prefix)
 if not os.path.isdir(path):
     print("Directory does not exist yet, making dir {}".format(path))
     try:
@@ -117,7 +121,7 @@ pv_list = [epics.PV(pv) for pv in
                     'steam:laser:nos_get', 'steam:powme1:pow_get',
                     scanner + '_pmt:aver_get', scanner + '_pmt:dout_gain_get', scanner + '_pmt:offset_get',
                     scanner + '_ai0:aver_get', scanner + '_ai0:dout_gain_get', scanner + '_ai0:offset_get',
-                    scanner + ':maxvel_get', scanner + ':trig_cycle_get', scanner + '_pmt_hv:u_get'
+                    scanner + ':maxvel_get', scanner + ':trig_cycle_get', 
                 ]]
 pv_info = []  # This list will be saved at the end
 for pv in pv_list:
@@ -127,7 +131,7 @@ for pv in pv_list:
 pv_info.append("Measured on {}".format(now.strftime("%d.%m.%Y %H:%M")))
 pv_info.append("Quadrupol {}".format(pv_qd_set.pvname))
 
-outfile = "{}{}wirescan_info.dat".format(path, file_prefix)
+outfile = "{}{}wirescan_trig_info.dat".format(path, file_prefix)
 print("Saving results to {}".format(outfile))
 with open(outfile, 'w') as f:
     for pv in pv_info:
@@ -138,62 +142,57 @@ df = pd.DataFrame(columns=['i_set', 'i_get', 'nos_ch0'])
 idf = 0
 
 # Prepare scanner
-## Enablegenerator
-epics.caput(scanner + ":eg_input_FU00_set", 48) # Scanner in Bewegung und in Fenster
-epics.caput(scanner + ":eg_func_FU00_set", 0) # Logisches AND 
-## Trigger
-pv_scan_trig_input.put(0)
+# pv_scan_trig_input.put(0)
 time.sleep(.5)
 fahre_zu(s_start, pv_scan_stoppos, pv_scan_start, pv_scan_run_get) 
 print("==============================================")
 epics.caput('steam:laser_shutter:ls_set', 0)
+epics.caput('steam:laser:dc_set', 0)
+time.sleep(0.5)
 
-try:
-    for no, i_set in enumerate(np.linspace(i_init, i_final, nelm)):
-        print("Run: {} of {}".format(no+1, nelm))
-        i_set = np.round(i_set, 6)
-        # Time estimation
-        if i_set == i_init:
-            start = time.time()
-        
-        # QP
-        i_get = set_quadrupol(i_set, pv_qd_set, pv_qd_get)
-        print('Quadrupol bereit. Oeffne Shutter.')
-        epics.caput('steam:laser_shutter:ls_set',1)
-        time.sleep(.5)
-        
-        pv_scan_trig_input.put(32)  # Cyclic Trigger on 
-        time.sleep(.5)
-        
-        print('Starte Scan für Strom i_set = {}, i_get = {}'.format(i_set, i_get))
-        fahre_zu(s_end, pv_scan_stoppos, pv_scan_start, pv_scan_run_get) 
-        time.sleep(.5)
-        
-        pv_scan_trig_input.put(0)  # Cyclic Trigger off
-        print('Scan abgeschlossen! Schliesse Shutter.')
-        time.sleep(.5)
-        
-        epics.caput('steam:laser_shutter:ls_set',0)
-        print('Fahre zur Startposition zurück')
-        fahre_zu(s_start, pv_scan_stoppos, pv_scan_start, pv_scan_run_get) 
-    
-        df.loc[idf] = [i_set, i_get, pv_datach0_nos.get()]
-        idf += 1
-        
-        if idf >= 2 and (df['nos_ch0'][idf-1] - df['nos_ch0'][idf-2])*nelm >= 1000000:
-            print("Warning! Measurement will take {} datapoints. This is too much for scanner datastorage.".format((df['nos_ch0'][idf-1] - df['nos_ch0'][idf-2])*nelm))
-            print("It can only save 1000000 datapoints.")
-            
-        stop = time.time()
-        remaining_steps = nelm - no
-        ert = round((stop - start)*remaining_steps)
-        print("Estimated remaining time: {}s".format(ert))
+#try:
+for no, i_set in enumerate(np.linspace(i_init, i_final, nelm)):
+    print("Run: {} of {}".format(no+1, nelm))
+    i_set = np.round(i_set, 6)
+    # Time estimation
+    if i_set == i_init:
         start = time.time()
-        print("==============================================")
+    
+    # QP
+    i_get = set_quadrupol(i_set, pv_qd_set, pv_qd_get)
+    print('Quadrupol bereit. Oeffne Shutter.')
+    epics.caput('steam:laser_shutter:ls_set',1)
+    time.sleep(1)
+    
+    #pv_scan_trig_input.put(32)  # Cyclic Trigger on 
+    print('Starte Scan für Strom i_set = {}, i_get = {}'.format(i_set, i_get))
+    for pos in np.arange(s_start, s_end + ds, ds):
+        fahre_zu(pos, pv_scan_stoppos, pv_scan_start, pv_scan_run_get) 
+        time.sleep(.5)
+        pv_sh.put(1)
+        time.sleep(.5)
+    
+    #pv_scan_trig_input.put(0)  # Cyclic Trigger off
+    print('Scan abgeschlossen! Schliesse Shutter.')
+    time.sleep(.5)
+    
+    epics.caput('steam:laser_shutter:ls_set',0)
+    print('Fahre zur Startposition zurück')
+    fahre_zu(s_start, pv_scan_stoppos, pv_scan_start, pv_scan_run_get) 
 
-except KeyboardInterrupt:
-    print("Aborting.")
-    abort_script()
+    df.loc[idf] = [i_set, i_get, pv_datach0_nos.get()]
+    idf += 1
+        
+    stop = time.time()
+    remaining_steps = nelm - no
+    ert = round((stop - start)*remaining_steps)
+    print("Estimated remaining time: {}s".format(ert))
+    start = time.time()
+    print("==============================================")
+
+#except KeyboardInterrupt:
+ #   print("Aborting.")
+  #  abort_script()
 
 print("Messung abgeschlossen.")
 # Save
