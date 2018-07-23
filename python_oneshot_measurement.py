@@ -7,6 +7,11 @@ import sys
 from python_quadscan_methods import *
 
 
+
+# Scanner
+scanner = "melba_020:scan"
+
+
 if len(sys.argv) != 5:
     print("Usage: python3 {} <quad_no=1> <i_init=-0.05> <i_final=0.15> <di=0.05>, shutter can be closed, picamera should be ready for trigger".format(sys.argv[0])) 
     sys.exit()
@@ -45,8 +50,13 @@ if i_init > i_final:
     di = -di
 nelm = int((i_final + di - i_init)/di)
 
-#PVs
-print("Debug")
+# Quadrupol PV
+triplet = scanner[:9]
+pv_qd_set = epics.PV(triplet + ':trip_q{}:i_set'.format(quad_no))
+pv_qd_get = epics.PV(triplet + ':trip_q{}:i_get'.format(quad_no))
+
+
+#Miscellanous PVs
 pv_qd_param = ['i_set', 'i_get', 'on_set']
 pv_laser = {'setamp_get': epics.PV('steam:laser:setamp_get'), 'pow_get': epics.PV('steam:powme1:pow_get')}
 pv_all = dict()
@@ -77,12 +87,12 @@ if not any(response == yes for yes in ['G','g']):
     sys.exit(0)
 
 # pv_getall
-subprocess.call(['python3', '/home/melba/messung/All_quadscan/python_pv_getall.py'])
+#subprocess.call(['python3', '/home/melba/messung/All_quadscan/python_pv_getall.py'])
 
 
 #Safety checks
 epics.caput('steam:laser:dc_set', 0)
-check_laser()
+check_laser(pv_laser['pow_get'])
 
 # Measurement loop
 try:
@@ -93,7 +103,7 @@ try:
             start = time.time()
     
         ## Quadrupol
-        i_get = set_quadrupol(i_set, pv_qd_set, pv_qd_get, True)
+        i_get = set_quadrupol(i_set, pv_qd_set, pv_qd_get, True, pv_laser['pow_get'])
         print('Quadrupol bereit. Oeffne Shutter.')        
 
         time.sleep(1)
@@ -107,7 +117,7 @@ try:
         print("Waiting for camera {}s...".format(wait_for_camera))
         wait = 0.0
         while wait < float(wait_for_camera):
-            check_laser()
+            check_laser(pv_laser['pow_get'])
             wait += 0.1
             time.sleep(.1)    
         stop = time.time()

@@ -47,6 +47,7 @@ pv_scan_start = epics.PV(scanner+ ':start')
 pv_scan_run_get = epics.PV(scanner+ ':run_get')
 pv_scan_trig_input = epics.PV(scanner+ ':trig_input_FU00_set')
 pv_datach0_nos = epics.PV(scanner+ ':datach0_noofsamples_get')
+pv_datachn_nos = [epics.PV(scanner+ ':datach{}_noofsamples_get'.format(n)) for n in range(1,8)]
 
 # Quadrupol PV
 triplet = scanner[:9] 
@@ -64,7 +65,7 @@ if not any(confirmation == yes for yes in ['Y','y']):
 
 # Check if datastorage already contains values
 print("Checking, if datastorage already contains measurements...", end="", flush=True)
-if pv_datach0_nos.get() != 0:
+if not pv_datach0_nos.get() == 0 or not all(pv_datachn_nos[n].get() == 0 for n in range(7)):
     print("\n==============================================")
     proceed = input("Datastorage not empty! Clear before proceed.[proceed,p]")
     if not any(proceed == ans for ans in ['proceed','p']):
@@ -159,6 +160,9 @@ try:
         # QP
         i_get = set_quadrupol(i_set, pv_qd_set, pv_qd_get)
         print('Quadrupol bereit. Oeffne Shutter.')
+        if epics.caget('steam:laser:dc_get') == 0:
+            print("Laser dc mode is off! Aborting")
+            abort_script()
         epics.caput('steam:laser_shutter:ls_set',1)
         time.sleep(.5)
         

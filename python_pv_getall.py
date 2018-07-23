@@ -23,8 +23,8 @@ def get_pv(pvname, digits=10):
     return value, unit
 
 
+#================================================================
 # PVs
-
 ## Magnets
 pv_steerer = ['melba_{:03d}:s{}:{}'.format(sub, s, get) 
                 for sub in range(10,70,10) for s in ['h', 'v'] for get in ['i_get', 'on_get']]
@@ -37,10 +37,13 @@ pv_alpha = ['melba_030:a:i_get', 'melba_030:a:on_get']
 
 ## Laser
 pv_laser = ['steam:laser:setamp_get', 'steam:powme1:pow_get', 
-    'steam:powme1:wavelength_get', 'steam:laser:pl_get', 'steam:laser:dt_get', 'steam:laser:nos_get', 'steam:prefl_vs_i:i_get.INPA']
+    'steam:powme1:wavelength_get', 'steam:laser:pl_get', 'steam:laser:dt_get', 'steam:laser:nos_get']
 
-## All
-pv_all = pv_steerer + pv_solenoids + pv_quad_trip_q + pv_quad_trip_s + pv_alpha + pv_laser
+pv_bdcurr = ['steam:powme1:ibd_vs_prefl_slope_set', 'steam:powme1:ibd_vs_prefl_off_set', 'steam:powme1:ibd_vs_prefl_get']
+
+#================================================================
+# All pvs in one list
+pv_all = pv_steerer + pv_solenoids + pv_quad_trip_q + pv_quad_trip_s + pv_alpha + pv_laser + pv_bdcurr
 
 
 # Miscellanous

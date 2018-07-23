@@ -29,7 +29,7 @@ def check_conditions():
 num_mean = 20
 delay = 0.2
 # Laser
-amp_low, amp_high, amp_step = 5000, 65000, 5000
+amp_low, amp_high, amp_step = 5000, 20000, 1000
 amp_range = range(amp_low, amp_high+amp_step, amp_step)
 
 # No CHANGES below here

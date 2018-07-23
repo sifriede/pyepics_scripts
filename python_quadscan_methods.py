@@ -10,14 +10,14 @@ import os
 
 
 # Methods
-def abort_script(DISP = False):
+def abort_script(DISP=False, scanner='melba_020:scan'):
     """Script to close shutter or turn of laser an abort script"""
     if not DISP:
         try:
             print("Closing shutter and setting dc off")
             epics.caput('steam:laser_shutter:ls_set', 0)
             epics.caput('steam:laser:dc_set', 0)
-            pv_scan_trig_input.put(0)  # Cyclic Trigger off
+            epics.caput(scanner + ':trig_input_FU00_set', 0)
         except:
             epics.caput('steam:laser:on_set', 0)
     try:
@@ -30,9 +30,9 @@ def abort_script(DISP = False):
     sys.exit()
 
 
-def check_laser():
+def check_laser(pv_laser):
     """Safety function to check if laser power is too high while waiting"""
-    if pv_laser['pow_get'].get() >= 5e-6:
+    if pv_laser.get() >= 5e-6:
         print("Laser power too high! Aborting!")
         abort_script()
 
@@ -48,7 +48,7 @@ def fahre_zu(pos, pv_scan_stoppos, pv_scan_start, pv_scan_run_get):
     pv_scan_start.put(1)
 
 
-def set_quadrupol(i_set, i_set_pv, i_get_pv, shot_mode=False):
+def set_quadrupol(i_set, i_set_pv, i_get_pv, shot_mode=False, pv_laser=None):
     """Sets quadrupol to i_set and waits until i_get is updated accordingly"""
     print("Quadrupol i_set: {:+05d}mA".format(int(i_set*1000)))
     i_set_pv.put(i_set)
@@ -63,7 +63,7 @@ def set_quadrupol(i_set, i_set_pv, i_get_pv, shot_mode=False):
            print("Waiting for i_get to be updated...")
            info = False
         time.sleep(0.1) 
-        if shot_mode: check_laser()
+        if shot_mode: check_laser(pv_laser)
         wait_stop_time = time.time()
         if wait_stop_time - wait_start_time > 15:
             break
