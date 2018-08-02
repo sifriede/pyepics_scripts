@@ -1,4 +1,11 @@
 # coding: utf-8
+
+"""
+    This script fits a 2d gaussian distribution to all qd<quad_no>_<i_set>mA.npz files in pic_dir + path.
+    It saves its result as dataframe and png
+"""
+
+
 import datetime
 import glob
 import python_method_2d_gaussian_fit as pm2g
@@ -7,36 +14,31 @@ import numpy as np
 import pandas as pd
 import time as tm
 import os
+import sys
 
-reflected_laserp=""
-##########################################################################
-##########################################################################
-# Start angle for first fit (going from negativ to positiv, e.g. -200mA, -180mA..., 0mA, ... +200mA)
-theta_deg = 90.0
-#=====Quadpics=====
-pic_dir  = "../quad_pics/180704/"
+
+# Defaults
+annotations = []
 path = "single/"
-#path = "180704_1317/"
-reflected_laserp = "(+0.0021 +/- +5.44e-07)W (0.026%)"
-#path = "180704_1306/"
-#reflected_laserp = "(+0.000242 +/- +2.64e-08)W (0.011%)"
-#path = "180704_1114/"
-#reflected_laserp = "(+0.000138 +/- +2.39e-08)W (0.017%)"
-#path = "180704_1046/"
-#reflected_laserp = "(+3.22e-05 +/- +2.02e-08)W (0.063%)"
-#reflected_laserp = "(+3.09e-05 +/- +1.13e-08)W (0.037%)"
+##########################################################################
 
-#=====Oneshot=====
-# pic_dir  = "../oneshot_pics/180723/"
-#path = "180723_1047/"
-#reflected_laserp = "(+2.04e-05 +/- +1.82e-08)W (0.089%)"
-#path = "180723_1059/"
-#reflected_laserp = "(+2.04e-05 +/- +1.82e-08)W (0.089%)"
-#path = "180723_1121/"
-#reflected_laserp = "(+7.15e-05 +/- +2.23e-08)W (0.031%)"
-# path = "180723_1215/"
-# reflected_laserp="11800 Amp"
+#=====Quadpics=====
+pic_dir  = "../quad_pics/180726/"
+#measure_time = "1048"
+measure_time = "sing"
+annotations = ["Ibd = (+4.46e-09 +/- +2.67e-11)A (0.597%)"]
 
+# Start angle for first fit (going from negativ to positiv, e.g. -200mA, -180mA..., 0mA, ... +200mA)
+theta_deg = input("Start angle in degree: ")
+try:
+    theta_deg = float(theta_deg)
+except:
+    theta_deg = 0.0
+    print("Could not read input, start fitting with angle {}".format(theta_deg))
+    
+
+## Sub region of interest (top, bottom, left, right) with view from imshow -> y-axis inverted
+sub_roi = [350, 1200, 800, 1400]
 ## Scale
 px2mm = 20/(2480 - 1060)
 
@@ -44,23 +46,29 @@ px2mm = 20/(2480 - 1060)
 ##########################################################################
 
 # Miscellanous
-pic_path = pic_dir + path
+measure_timestamp = "{}_{}".format(pic_dir[-7:-1], measure_time)
+pic_path = pic_dir + measure_timestamp + "/"
 bckg = 'background.npz'
+dBdsi = {1: 0.474, 2: 0.472, 3: 0.472}  # melba_020:trip_q<1|2|3>
+ep, s = 895.394, 0.04921   # e/p in m/(Vs), effektive Länge in m
 
-
-# Number of images to fit without background image
-pics = [pic for pic in glob.glob(pic_path + "*mA.npz") if not pic[len(pic_path):].startswith("fit_")]
+# Number of images to fit without background image 
+pics = [pic for pic in glob.glob(pic_path + "*mA.npz")]
+pics = [pic for pic in pics if not pic[len(pic_path):].startswith("fit_")]
+pics = [pic for pic in pics if not pic[len(pic_path):].startswith("err_")]
 nelm = len(pics)  
 
-# DataFrames
+# Prepare result dataframes
 ## Pictures
 dp = pd.DataFrame(columns=['curr_set[mA]', 'picture'])
 idp = 0
 for pic in pics:
     try:
         curr_set_pic = int(pic[-11:-6])
+        trip_no = int(pic[len(pic_path):][3:6])
+        quad_no = int(pic[len(pic_path):][7])
     except:
-        print("Could not extract set current from filename! Use scheme: qd<quad_no>s_<:=+4d>mA.npz")
+        print("Could not extract set current and quad number from filename! Use scheme: qd<quad_no>s_<:=+4d>mA.npz")
         sys.exit()
     else:
         dp.loc[idp] = [curr_set_pic, pic]
@@ -69,15 +77,25 @@ dp = dp.sort_values(['curr_set[mA]'], ascending = True)
 dp = dp.reset_index(drop=True)
 
 ## Results
-df = pd.DataFrame(columns = ['pic', 'curr_get[A]', 'sigma_x[px]', 'sigma_x_err[px]', 
+df = pd.DataFrame(columns = ['pic', 'curr_get[A]', 'k[1/m2]', 'sigma_x[px]', 'sigma_x_err[px]', 
                                             'sigma_y[px]', 'sigma_y_err[px]', 'theta[rad]', 'theta_err[rad]'])
 idx = 0
 
-
+# Estimated time start
 start_start =tm.time()
+
 # Background image for substraction
-print("Loading background image: {}{}".format(pic_path, bckg))
-img_bckg, time_bckg, curr_bckg = pm2g.load_image(pic_path, bckg)
+try:
+    print("Loading background image: {}{}".format(pic_path, bckg))
+    img_bckg, time_bckg, curr_bckg = pm2g.load_image(pic_path, bckg)
+    img_bckg = pm2g.roi_img(img_bckg, *sub_roi)
+except:
+    print("Error while reading background image.")
+    answer = input("Do you want to continue?[yes]")
+    if not answer == 'yes':
+        print("Aborting")
+        sys.exit()
+
 
 theta = np.deg2rad(theta_deg)  # From here on calculating in radians
 for i, f in dp.iterrows():
@@ -91,29 +109,36 @@ for i, f in dp.iterrows():
         result_path = "{}fit_{}".format(pic_path, pic[:-4])
         result_plot_path = result_path + ".png"
         
-        print("====================")
+        print("========================================")
         print("Loading {}/{}: {}{}".format(i, nelm, pic_path, pic))
         img, time_img, curr_get = pm2g.load_image(pic_path, pic)
+        img = pm2g.roi_img(img, *sub_roi)
 
         print("Subtracting background from image")
         img_wob = pm2g.subtract_background(img, img_bckg)
-        print("Start fitting subtracted image")
-        res = pm2g.two_dim_gaussian_fit(img_wob, pic, theta)
-        print("Finished! Saving plot: {}".format(result_plot_path))
+        try:
+            print("Start fitting subtracted image")
+            res = pm2g.two_dim_gaussian_fit(img_wob, pic, theta)
+        except:
+            print("Could not fit {}".format(pic))
+        
+        else:
+            print("Finished! Saving plot: {}".format(result_plot_path))
      
-        theta = res['img_popt'][-1]
+            theta = res['img_popt'][-1]
 
-        sigmax, sigmax_err = res['img_popt'][3], np.sqrt(res['img_pcov'][3,3])
-        sigmay, sigmay_err = res['img_popt'][4], np.sqrt(res['img_pcov'][4,4])
-        theta_res, theta_res_err = res['img_popt'][-1], np.sqrt(res['img_pcov'][-1,-1])
+            sigmax, sigmax_err = res['img_popt'][3], np.sqrt(res['img_pcov'][3,3])
+            sigmay, sigmay_err = res['img_popt'][4], np.sqrt(res['img_pcov'][4,4])
+            theta_res, theta_res_err = res['img_popt'][-1], np.sqrt(res['img_pcov'][-1,-1])
         
-        pm2g.plot_image_and_fit(pic, res['img'], res['img_fit'], result_plot_path, 
-            time_img, curr_get, sigmax, sigmax_err, sigmay, sigmay_err)
+            pm2g.plot_image_and_fit(pic, res['img'], res['img_fit'], result_plot_path, 
+                time_img, curr_get, sigmax, sigmax_err, sigmay, sigmay_err)
             
-        pm2g.save_result(pic[:-4], res, curr_get, result_path)
+            pm2g.save_result(pic[:-4], res, curr_get, result_path)
         
-        df.loc[idx] = [pic, curr_get, sigmax, sigmax_err, sigmay, sigmay_err, theta_res, theta_res_err]
-        idx +=1
+            k = ep * dBdsi[quad_no] * curr_get
+            df.loc[idx] = [pic, curr_get, k, sigmax, sigmax_err, sigmay, sigmay_err, theta_res, theta_res_err]
+            idx +=1
         
         stop = tm.time()
         ert = (stop - start)*(nelm - i)
@@ -134,20 +159,20 @@ for col in df.columns:
 
 
 # Save result
-outfile = pic_path + "result_DataFrame.dat"
+outfile = pic_path + "qdt{:03d}q{}_result_DataFrame.dat".format(trip_no, quad_no)
 if os.path.isfile(outfile):
     overwrite = input("{} already exists, do you want to overwrite it?[yes, please]\nIt will be prefixed by timestamp instead.")
-    if overwrite  == 'yes, please':
-        overwrite_prefix = ''
-    else:
+    if overwrite  != 'yes, please':
         now = datetime.datetime.now()
         overwrite_prefix = now.strftime("%y%m%d_%H%M_")
+        outfile =  pic_path + "{}_qdt{:03d}q{}_result_DataFrame.dat".format(overwrite_prefix, trip_no, quad_no)
+        
+info_text = ', '.join([ "Measured  {}".format(measure_timestamp),  
+                                "scale px2mm =  {:.6f} mm/px".format(px2mm), 
+                                *annotations, "trip_no = {}".format(trip_no), "quad_no = {}".format(quad_no)])
 
 with open(outfile, 'w') as f:
-    f.write("#Measured  {}\n".format(path[:-1]))
-    f.write("#Scale px2mm =  {:.6f}\n".format(px2mm))
-    f.write("#P_refl = {}\n".format(reflected_laserp))
-    f.write("\n")
+    f.write("#{}\n".format(info_text))
     df.to_csv(f, float_format='%11.3e')
 
 # Plot
@@ -170,10 +195,7 @@ ax2 = ax1.twinx()
 ax2.set_ylim(np.array(ax1.get_ylim())*px2mm**2)
 ax2.set_ylabel(r'$\sigma^2$ [mm$^2$]', fontsize = 16)
 
-fig.text(0.01,0.01, 
-    "Measured  {}, ".format(path[:-1]) + 
-    "scale px2mm =  {:.6f} mm/px\n".format(px2mm) + 
-    "P_refl = {}".format(reflected_laserp))
+fig.text(0.01,0.01, info_text)
 ax1.legend()
 plt.savefig(outfile[:-4] + ".png")
 
@@ -194,10 +216,7 @@ ax2.plot(x, ytheta, 'g-', marker = '*')
 ax2.set_yticks(y2_tick)
 ax2.set_ylabel(r'$\theta$ [$\degree$]', fontsize = 16)
 ax2.grid()
-fig.text(0.01,0.01, 
-    "Measured  {}, ".format(path[:-1]) + 
-    "scale px2mm =  {:.6f} mm/px\n".format(px2mm) + 
-    "P_refl = {}".format(reflected_laserp))
+fig2.text(0.01,0.01, info_text)
 ax1.legend()
 plt.savefig(outfile[:-4] + "_theta.png")
 plt.show()
